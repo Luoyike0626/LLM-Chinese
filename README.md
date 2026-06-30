@@ -1,87 +1,116 @@
-# LLM Council
+# LLM Council — 大模型议会（中文版）
 
 ![llmcouncil](header.jpg)
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+> 本项目 fork 自 [karpathy/llm-council](https://github.com/karpathy/llm-council)，进行了全面的中文本地化改造。
 
-In a bit more detail, here is what happens when you submit a query:
+## 项目简介
 
-1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
-2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
-3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
+与其只问一个你最喜欢的 LLM（如 GPT、Gemini、Claude），不如组建一个「大模型议会」来共同审议你的问题。
 
-## Vibe Code Alert
+这是一个本地运行的 Web 应用，界面类似 ChatGPT，但背后是**三阶段审议流程**：
 
-This project was 99% vibe coded as a fun Saturday hack because I wanted to explore and evaluate a number of LLMs side by side in the process of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438). It's nice and useful to see multiple responses side by side, and also the cross-opinions of all LLMs on each other's outputs. I'm not going to support it in any way, it's provided here as is for other people's inspiration and I don't intend to improve it. Code is ephemeral now and libraries are over, ask your LLM to change it in whatever way you like.
+1. **第一阶段：独立回答** — 用户问题同时发送给多个大模型，收集各自的回答。所有回答以标签页展示，可逐一查看。
+2. **第二阶段：同行评审** — 各模型对匿名化后的回答进行评审和排名。关键设计：模型看到的是「回答A、回答B、回答C」，不知道哪个回答是哪个模型写的，从而避免偏袒自己。
+3. **第三阶段：最终答案** — 议会主席综合所有回答和评审意见，生成最终答案。
 
-## Setup
+## 本分支改动
 
-### 1. Install Dependencies
+相比原版 [karpathy/llm-council](https://github.com/karpathy/llm-council)，本仓库做了以下改动：
 
-The project uses [uv](https://docs.astral.sh/uv/) for project management.
+### 🀄 全面中文化
+- **前端界面**：所有 UI 文字（标题、按钮、提示、加载状态等）全部翻译为中文
+- **后端提示词**：三个阶段 + 标题生成的提示词全部改为中文，模型输出也会是中文
+- 议会名称改为「大模型议会」
 
-**Backend:**
+### 🔧 API 后端切换
+- 从 **OpenRouter** 切换为 **SiliconFlow（硅基流动）**，使用国产模型
+- API 端点：`https://api.siliconflow.cn/v1/chat/completions`
+- 环境变量改为 `SILICONFLOW_API_KEY`
+
+### 🐛 Bug 修复
+- **CORS 400 错误**：`allow_origins` 改为 `["*"]`，解决浏览器 OPTIONS 预检请求被拒的问题
+- **输入框消失**：修复回答结束后输入框不显示的问题，现在支持连续多轮对话
+- **模型失效**：原配置中的 `Qwen/Qwen3-235B-A22B` 和 `Pro/zai-org/GLM-4.5` 已在 SiliconFlow 下架，替换为当前可用的最新模型
+
+### 📦 当前议会成员
+
+| 角色 | 模型 |
+|---|---|
+| 议员 | `deepseek-ai/DeepSeek-V3` |
+| 议员 | `deepseek-ai/DeepSeek-R1`（推理特化） |
+| 议员 | `Qwen/Qwen3.5-397B-A17B`（通义千问3.5 超大规模 MoE） |
+| 议员 | `Pro/zai-org/GLM-5.1`（智谱 GLM 最新旗舰） |
+| 主席 | `deepseek-ai/DeepSeek-R1` |
+
+模型配置在 `backend/config.py` 中，可按需修改。
+
+## 使用方法
+
+### 1. 安装依赖
+
+**后端（Python）：**
 ```bash
-uv sync
+pip install fastapi uvicorn httpx python-dotenv pydantic
 ```
 
-**Frontend:**
+**前端（Node.js）：**
 ```bash
 cd frontend
 npm install
 cd ..
 ```
 
-### 2. Configure API Key
+### 2. 配置 API Key
 
-Create a `.env` file in the project root:
+在项目根目录创建 `.env` 文件：
 
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-...
+SILICONFLOW_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+> 在 [siliconflow.cn](https://siliconflow.cn) 注册即可获取 API Key。注意：部分模型（如 `Pro/` 前缀的）需要充值才能使用。
 
-### 3. Configure Models (Optional)
+### 3. 自定义模型（可选）
 
-Edit `backend/config.py` to customize the council:
+编辑 `backend/config.py`：
 
 ```python
 COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+    "deepseek-ai/DeepSeek-V3",
+    "deepseek-ai/DeepSeek-R1",
+    "Qwen/Qwen3.5-397B-A17B",
+    "Pro/zai-org/GLM-5.1",
 ]
 
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+CHAIRMAN_MODEL = "deepseek-ai/DeepSeek-R1"
 ```
 
-## Running the Application
+> 可在 [SiliconFlow 模型广场](https://cloud.siliconflow.cn/models) 浏览所有可用模型。
 
-**Option 1: Use the start script**
+### 4. 启动应用
+
+**终端 1 — 启动后端（端口 8001）：**
 ```bash
-./start.sh
+python -m backend.main
 ```
 
-**Option 2: Run manually**
-
-Terminal 1 (Backend):
-```bash
-uv run python -m backend.main
-```
-
-Terminal 2 (Frontend):
+**终端 2 — 启动前端（端口 5173）：**
 ```bash
 cd frontend
 npm run dev
 ```
 
-Then open http://localhost:5173 in your browser.
+然后浏览器打开 `http://localhost:5173` 即可使用。
 
-## Tech Stack
+## 技术栈
 
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
-- **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+| 层 | 技术 |
+|---|---|
+| 后端 | FastAPI (Python)、httpx 异步请求、SiliconFlow API |
+| 前端 | React + Vite、react-markdown 渲染 |
+| 存储 | JSON 文件（`data/conversations/`） |
+
+## 原版说明
+
+> 本项目 99% 是 vibe code 产物，是 [Andrej Karpathy](https://github.com/karpathy) 在某个周六为了「和 LLM 一起读书」而做的 side project。不会持续维护，仅供参考和启发。[原版 README](https://github.com/karpathy/llm-council)
