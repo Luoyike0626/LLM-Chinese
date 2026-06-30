@@ -15,7 +15,7 @@ COUNCIL_MODELS = [
     "deepseek-ai/DeepSeek-V3",       # DeepSeek 综合旗舰
     "deepseek-ai/DeepSeek-R1",       # DeepSeek 推理特化
     "Qwen/Qwen3.5-397B-A17B",        # 通义千问3.5 超大规模 MoE
-    "Pro/zai-org/GLM-5.1",           # 智谱 GLM-5.1 最新旗舰
+    "Pro/zai-org/GLM-5",             # 智谱 GLM-5（GLM-5.1 超时不可用）
 ]
 
 # Chairman model - synthesizes final response

@@ -54,7 +54,7 @@ async def stage1_collect_responses(
     """
     # Build message list with conversation history for context
     messages = [
-        {"role": "system", "content": "请始终使用中文回答用户的问题。注意查看对话历史，结合上下文理解用户的追问。"},
+        {"role": "system", "content": "你是大模型议会的议员之一，由 DeepSeek-R1 担任主席。请始终使用中文直接回答用户的问题，不要自称主席或扮演主席角色。注意查看对话历史，结合上下文理解用户的追问。"},
     ]
     if conversation_history:
         messages.extend(_build_conversation_context(conversation_history))
@@ -236,6 +236,10 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     Parse the FINAL RANKING section from the model's response.
 
+    Supports both English and Chinese formatting:
+    - "1. Response A" / "1. 回答A" / "1. 答案A"
+    - Fallback to any "Response X" / "回答X" / "答案X" in order
+
     Args:
         ranking_text: The full text response from the model
 
@@ -244,26 +248,33 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     import re
 
+    # Determine which label format to look for
+    # Check if the model used Chinese labels
+    uses_chinese = bool(re.search(r'回答[A-Z]|答案[A-Z]', ranking_text))
+    label_pattern = r'回答 ([A-Z])|答案 ([A-Z])' if uses_chinese else r'Response ([A-Z])'
+
     # Look for "FINAL RANKING:" section
     if "FINAL RANKING:" in ranking_text:
-        # Extract everything after "FINAL RANKING:"
         parts = ranking_text.split("FINAL RANKING:")
         if len(parts) >= 2:
             ranking_section = parts[1]
-            # Try to extract numbered list format (e.g., "1. Response A")
-            # This pattern looks for: number, period, optional space, "Response X"
-            numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
+
+            # Try numbered list: "1. Response A" or "1、回答A"
+            numbered_matches = re.findall(
+                r'\d+[\.\、\)]\s*(?:Response|回答|答案)\s*([A-Z])',
+                ranking_section
+            )
             if numbered_matches:
-                # Extract just the "Response X" part
-                return [re.search(r'Response [A-Z]', m).group() for m in numbered_matches]
+                return [f"Response {m}" for m in numbered_matches]
 
-            # Fallback: Extract all "Response X" patterns in order
-            matches = re.findall(r'Response [A-Z]', ranking_section)
-            return matches
+            # Fallback: extract all labels in order of appearance
+            all_matches = re.findall(r'(?:Response|回答|答案)\s*([A-Z])', ranking_section)
+            if all_matches:
+                return [f"Response {m}" for m in all_matches]
 
-    # Fallback: try to find any "Response X" patterns in order
-    matches = re.findall(r'Response [A-Z]', ranking_text)
-    return matches
+    # Fallback: search entire text for labels in order
+    all_matches = re.findall(r'(?:Response|回答|答案)\s*([A-Z])', ranking_text)
+    return [f"Response {m}" for m in all_matches]
 
 
 def calculate_aggregate_rankings(
@@ -286,10 +297,11 @@ def calculate_aggregate_rankings(
     model_positions = defaultdict(list)
 
     for ranking in stage2_results:
-        ranking_text = ranking['ranking']
-
-        # Parse the ranking from the structured format
-        parsed_ranking = parse_ranking_from_text(ranking_text)
+        # Use the pre-parsed ranking (same one shown in "Extracted Ranking" on frontend)
+        parsed_ranking = ranking.get('parsed_ranking', [])
+        if not parsed_ranking:
+            # Fallback: re-parse if pre-parsed is empty (shouldn't happen)
+            parsed_ranking = parse_ranking_from_text(ranking.get('ranking', ''))
 
         for position, label in enumerate(parsed_ranking, start=1):
             if label in label_to_model:
