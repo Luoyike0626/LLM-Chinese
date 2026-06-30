@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Any, Tuple
 from .openrouter import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
 
 
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
@@ -15,7 +15,10 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     Returns:
         List of dicts with 'model' and 'response' keys
     """
-    messages = [{"role": "user", "content": user_query}]
+    messages = [
+        {"role": "system", "content": "请始终使用中文回答用户的问题。"},
+        {"role": "user", "content": user_query}
+    ]
 
     # Query all models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
@@ -61,36 +64,36 @@ async def stage2_collect_rankings(
         for label, result in zip(labels, stage1_results)
     ])
 
-    ranking_prompt = f"""You are evaluating different responses to the following question:
+    ranking_prompt = f"""你正在评估针对以下问题的不同回答，请使用中文进行评价：
 
-Question: {user_query}
+问题：{user_query}
 
-Here are the responses from different models (anonymized):
+以下是不同模型的回答（已匿名化）：
 
 {responses_text}
 
-Your task:
-1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
-2. Then, at the very end of your response, provide a final ranking.
+你的任务：
+1. 首先，逐一评估每个回答。对每个回答，说明它的优点和不足。
+2. 然后，在你的回答末尾给出最终排名。
 
-IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
-- Start with the line "FINAL RANKING:" (all caps, with colon)
-- Then list the responses from best to worst as a numbered list
-- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
-- Do not add any other text or explanations in the ranking section
+重要：最终排名必须严格按以下格式：
+- 以"FINAL RANKING:"（全大写，带冒号）开头
+- 然后按从最好到最差的顺序列出编号
+- 每行格式：数字、句点、空格，然后仅写回答标签（例如 "1. Response A"）
+- 排名部分不要添加任何其他文字或解释
 
-Example of the correct format for your ENTIRE response:
+正确的完整回答格式示例：
 
-Response A provides good detail on X but misses Y...
-Response B is accurate but lacks depth on Z...
-Response C offers the most comprehensive answer...
+回答A在X方面提供了很好的细节，但在Y方面有所欠缺...
+回答B在准确性上表现不错，但在Z方面深度不够...
+回答C提供了最全面的答案...
 
 FINAL RANKING:
 1. Response C
 2. Response A
 3. Response B
 
-Now provide your evaluation and ranking:"""
+现在请提供你的评价和排名："""
 
     messages = [{"role": "user", "content": ranking_prompt}]
 
@@ -139,22 +142,22 @@ async def stage3_synthesize_final(
         for result in stage2_results
     ])
 
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+    chairman_prompt = f"""你是大模型议会的主席。多个AI模型已对用户的问题给出了回答，并相互进行了排名评审。
 
-Original Question: {user_query}
+原始问题：{user_query}
 
-STAGE 1 - Individual Responses:
+第一阶段 - 独立回答：
 {stage1_text}
 
-STAGE 2 - Peer Rankings:
+第二阶段 - 同行评审：
 {stage2_text}
 
-Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
-- The individual responses and their insights
-- The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
+作为主席，你的任务是将以上所有信息综合成一个全面、准确的答案来回答用户的问题。请考虑：
+- 各模型独立回答的内容和洞见
+- 同行评审中揭示的回答质量差异
+- 一致或分歧的模式
 
-Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+请使用中文，提供一个清晰、有理有据的最终答案，代表议会的集体智慧："""
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
@@ -165,7 +168,7 @@ Provide a clear, well-reasoned final answer that represents the council's collec
         # Fallback if chairman fails
         return {
             "model": CHAIRMAN_MODEL,
-            "response": "Error: Unable to generate final synthesis."
+            "response": "错误：无法生成最终综合答案。"
         }
 
     return {
@@ -265,23 +268,22 @@ async def generate_conversation_title(user_query: str) -> str:
     Returns:
         A short title (3-5 words)
     """
-    title_prompt = f"""Generate a very short title (3-5 words maximum) that summarizes the following question.
-The title should be concise and descriptive. Do not use quotes or punctuation in the title.
+    title_prompt = f"""请为以下问题生成一个简短的中文标题（最多10个字），简洁且具有描述性。不要使用引号或标点符号。
 
-Question: {user_query}
+问题：{user_query}
 
-Title:"""
+标题："""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use gemini-2.5-flash for title generation (fast and cheap)
-    response = await query_model("google/gemini-2.5-flash", messages, timeout=30.0)
+    # Use a fast/cheap model for title generation
+    response = await query_model(TITLE_MODEL, messages, timeout=30.0)
 
     if response is None:
         # Fallback to a generic title
-        return "New Conversation"
+        return "新对话"
 
-    title = response.get('content', 'New Conversation').strip()
+    title = response.get('content', '新对话').strip()
 
     # Clean up the title - remove quotes, limit length
     title = title.strip('"\'')
@@ -310,7 +312,7 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     if not stage1_results:
         return [], [], {
             "model": "error",
-            "response": "All models failed to respond. Please try again."
+            "response": "所有模型均未能响应，请重试。"
         }, {}
 
     # Stage 2: Collect rankings
